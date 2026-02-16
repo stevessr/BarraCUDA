@@ -14,7 +14,7 @@
 /* Maps amd_op_t -> (format, hw_opcode, mnemonic) */
 /* GFX11 (gfx1100, RDNA 3) hardware opcodes.
    Extracted by assembling with llvm-mc and reading the bones.
-   Every value verified against the machine — no guesswork, no vibes. */
+   */
 const amd_enc_entry_t amd_enc_table[AMD_OP_COUNT] = {
     /* SOP2 */
     [AMD_S_ADD_U32]         = { AMD_FMT_SOP2, 0x00, "s_add_u32"         },
