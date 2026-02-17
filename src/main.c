@@ -5,6 +5,7 @@
 #include "bir_lower.h"
 #include "bir_mem2reg.h"
 #include "amdgpu.h"
+#include "tensix.h"
 #include <stdlib.h>
 
 static char       source_buf[BC_MAX_SOURCE];
@@ -67,7 +68,8 @@ static void usage(const char *prog)
         "  -D <name[=val]> Define a preprocessor macro\n"
         "  --amdgpu      Compile to AMDGCN assembly (gfx1100)\n"
         "  --amdgpu-bin  Compile to AMDGPU ELF code object (.hsaco)\n"
-        "  -o <file>     Output file (for --amdgpu-bin)\n"
+        "  --tensix      Compile to TT-Metalium C++ (Tensix SFPU)\n"
+        "  -o <file>     Output file (for --amdgpu-bin, --tensix)\n"
         "  --help        Show this message\n"
         "\n", prog);
 }
@@ -83,6 +85,7 @@ int main(int argc, char *argv[])
     int mode_ir = 0;
     int mode_amdgpu = 0;
     int mode_amdgpu_bin = 0;
+    int mode_tensix = 0;
     int no_mem2reg = 0;
     int no_pp = 0;
 
@@ -109,6 +112,8 @@ int main(int argc, char *argv[])
             mode_amdgpu = 1;
         else if (strcmp(argv[i], "--amdgpu-bin") == 0)
             mode_amdgpu_bin = 1;
+        else if (strcmp(argv[i], "--tensix") == 0)
+            mode_tensix = 1;
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             output_file = argv[++i];
         else if (strcmp(argv[i], "-I") == 0 && i + 1 < argc) {
@@ -143,7 +148,7 @@ int main(int argc, char *argv[])
     }
 
     if (!mode_pp && !mode_lex && !mode_parse && !mode_sema && !mode_ir &&
-        !mode_amdgpu && !mode_amdgpu_bin)
+        !mode_amdgpu && !mode_amdgpu_bin && !mode_tensix)
         mode_parse = 1;
 
     uint32_t src_len = 0;
@@ -215,7 +220,8 @@ int main(int argc, char *argv[])
         printf("\n%u tokens, %d error(s)\n", L.num_tokens, L.num_errors);
     }
 
-    if (mode_parse || mode_sema || mode_ir || mode_amdgpu || mode_amdgpu_bin) {
+    if (mode_parse || mode_sema || mode_ir || mode_amdgpu || mode_amdgpu_bin ||
+        mode_tensix) {
         parser_t P;
         parser_init(&P, token_buf, L.num_tokens, lex_src,
                     node_buf, BC_MAX_NODES);
@@ -237,8 +243,8 @@ int main(int argc, char *argv[])
 
         /* Semantic analysis */
         sema_ctx_t *sema_ctx = NULL;
-        if ((mode_sema || mode_ir || mode_amdgpu || mode_amdgpu_bin)
-            && P.num_errors == 0)
+        if ((mode_sema || mode_ir || mode_amdgpu || mode_amdgpu_bin ||
+             mode_tensix) && P.num_errors == 0)
         {
             sema_ctx = (sema_ctx_t *)malloc(sizeof(sema_ctx_t));
             if (!sema_ctx) {
@@ -265,7 +271,8 @@ int main(int argc, char *argv[])
             }
         }
 
-        if ((mode_ir || mode_amdgpu || mode_amdgpu_bin) && P.num_errors == 0) {
+        if ((mode_ir || mode_amdgpu || mode_amdgpu_bin || mode_tensix) &&
+            P.num_errors == 0) {
             bir_module = (bir_module_t *)malloc(sizeof(bir_module_t));
             if (!bir_module) {
                 fprintf(stderr, "error: failed to allocate BIR module\n");
@@ -303,6 +310,49 @@ int main(int argc, char *argv[])
                         rc = arc;
                     }
                     free(amd);
+                }
+
+                if (mode_tensix) {
+                    tt_module_t *ttm = (tt_module_t *)malloc(sizeof(tt_module_t));
+                    if (!ttm) {
+                        fprintf(stderr, "error: failed to allocate Tensix module\n");
+                        free(bir_module);
+                        return 1;
+                    }
+                    int trc = tensix_compile(bir_module, ttm);
+                    if (trc == BC_OK) {
+                        tensix_coarsen(ttm);
+                        tensix_regalloc(ttm);
+
+                        const char *compute_path =
+                            output_file ? output_file : "a_compute.cpp";
+                        tensix_emit_metalium(ttm, compute_path);
+
+                        /* Derive host path: foo_compute.cpp -> foo_host.cpp,
+                         * foo.cpp -> foo_host.cpp */
+                        char host_path[BC_MAX_PATH];
+                        const char *stem = strstr(compute_path, "_compute");
+                        if (stem) {
+                            int pfx = (int)(stem - compute_path);
+                            snprintf(host_path, sizeof(host_path),
+                                     "%.*s_host.cpp", pfx, compute_path);
+                        } else {
+                            const char *dot = strrchr(compute_path, '.');
+                            if (dot) {
+                                int pfx = (int)(dot - compute_path);
+                                snprintf(host_path, sizeof(host_path),
+                                         "%.*s_host.cpp", pfx, compute_path);
+                            } else {
+                                snprintf(host_path, sizeof(host_path),
+                                         "%s_host.cpp", compute_path);
+                            }
+                        }
+                        tensix_emit_host(ttm, host_path, compute_path);
+                    } else {
+                        fprintf(stderr, "error: Tensix compilation failed\n");
+                        rc = trc;
+                    }
+                    free(ttm);
                 }
             }
             free(bir_module);

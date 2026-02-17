@@ -1,7 +1,7 @@
 CC      = gcc
 CFLAGS  = -std=c99 -Wall -Wextra -pedantic -O2
 SRCDIR  = src
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/preproc.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/sema.c $(SRCDIR)/bir.c $(SRCDIR)/bir_print.c $(SRCDIR)/bir_lower.c $(SRCDIR)/bir_mem2reg.c $(SRCDIR)/amdgpu_isel.c $(SRCDIR)/amdgpu_emit.c
+SOURCES = $(SRCDIR)/main.c $(SRCDIR)/preproc.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/sema.c $(SRCDIR)/bir.c $(SRCDIR)/bir_print.c $(SRCDIR)/bir_lower.c $(SRCDIR)/bir_mem2reg.c $(SRCDIR)/amdgpu_isel.c $(SRCDIR)/amdgpu_emit.c $(SRCDIR)/tensix_isel.c $(SRCDIR)/tensix_emit.c $(SRCDIR)/tensix_coarsen.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET  = barracuda
 
