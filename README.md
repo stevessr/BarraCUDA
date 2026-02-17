@@ -4,6 +4,8 @@ An open-source CUDA compiler that targets AMD GPUs, with more architectures plan
 
 This is what happens when you look at NVIDIA's walled garden and think "how hard can it be?" The answer is: quite hard, actually, but I did it anyway.
 
+note: if youre here to test out my current tenstorrent implementation youll have to clone that respective branch :-) 
+
 ## What It Does
 
 Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 3 (gfx1100) binaries. No LLVM. No HIP translation layer. No "convert your CUDA to something else first." Just a lexer, a parser, an IR, and roughly 1,700 lines of hand-written instruction selection that would make a compiler textbook weep.
