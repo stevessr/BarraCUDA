@@ -104,3 +104,5 @@ Each of these is a standalone session-sized task:
 Preprocessor first (unblocks real .cu files), then sema (unblocks everything else),
 then vector types + half (unblocks ML kernels), then shared memory (unblocks perf),
 then operator overloading + gotos + member access, then polish.
+
+Note: Looking at the fortran H compiler atm and some of my other cbt tape compilers to see what I can implement here
