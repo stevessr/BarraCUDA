@@ -34,7 +34,7 @@ Humour is welcome. Arrogance is not.
 
 ## What's Useful
 
-Check `ROADMAP.txt` for current priorities. At time of writing, the most impactful areas are:
+Check `Issues` for current priorities. At time of writing, the most impactful areas are:
 
 - **Language features:** Compound assignment (`+=`), bare `unsigned`, literal suffixes, `const`, parameter reassignment
 - **Backend work:** New architecture targets (see below)
