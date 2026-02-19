@@ -2,9 +2,9 @@ name: RDNA3 Emulator Tests
 
 on:
   push:
-    branches: [fixesAMD]
+    branches: [master]
   pull_request:
-    branches: [fixesAMD]
+    branches: [master]
 
 jobs:
   rdna3-emu:
