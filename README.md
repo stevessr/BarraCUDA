@@ -4,9 +4,11 @@ An open-source CUDA C++ compiler written from scratch in C99 that takes `.cu` fi
 
 This is what happens when you look at NVIDIA's walled garden and think "how hard can it be?" The answer is: quite hard, actually, but I did it anyway.
 
+**UPDATE: RDNA 4 now supported.** `--gfx1200`
+
 ## What It Does
 
-Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 3 (gfx1100) binaries. No LLVM. No HIP translation layer. No "convert your CUDA to something else first." Just a lexer, a parser, an IR, and roughly 1,700 lines of hand-written instruction selection that would make a compiler textbook weep.
+Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 3 (gfx1100) and RDNA 4 (gfx1200) binaries. No LLVM. No HIP translation layer. No "convert your CUDA to something else first." Just a lexer, a parser, an IR, and roughly 1,700 lines of hand-written instruction selection that would make a compiler textbook weep.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -30,7 +32,7 @@ Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compile
 │       ↓                                                      │
 │  Register Allocation → VGPR/SGPR assignment                  │
 │       ↓                                                      │
-│  Binary Encoding → GFX11 instruction words                   │
+│  Binary Encoding → GFX11/GFX12 instruction words              │
 │       ↓                                                      │
 │  ELF Emission → .hsaco ready for the GPU                     │
 │       ↓                                                      │
@@ -59,8 +61,11 @@ make
 ## Usage
 
 ```bash
-# Compile to AMD GPU binary
+# Compile to AMD GPU binary (RDNA 3, default)
 ./barracuda --amdgpu-bin kernel.cu -o kernel.hsaco
+
+# Compile for RDNA 4
+./barracuda --amdgpu-bin --gfx1200 kernel.cu -o kernel.hsaco
 
 # Dump the IR (for debugging or curiosity)
 ./barracuda --ir kernel.cu
@@ -74,7 +79,7 @@ make
 
 ## What Works
 
- The following CUDA features compile to working GFX11 machine code:
+ The following CUDA features compile to working GFX11/GFX12 machine code:
 
 ### Core Language
 - `__global__`, `__device__`, `__host__` function qualifiers
@@ -123,23 +128,6 @@ wrote vector_add.hsaco (528 bytes code, 1 kernels)
 
 No LLVM required :-) 
 
-## Architecture
-
-| File | Lines | What It Does |
-|------|-------|-------------|
-| `lexer.c` | 747 | Tokenises CUDA C source |
-| `preproc.c` | 1,370 | C preprocessor (macros, includes, conditionals) |
-| `parser.c` | 1,500 | Recursive descent parser → AST |
-| `sema.c` | 1,725 | Type checking, scope resolution, overload resolution |
-| `bir.c` + `bir_lower.c` | 3,032 | SSA intermediate representation + AST→BIR lowering |
-| `bir_mem2reg.c` | 965 | Promotes stack allocas to SSA registers |
-| `bir_print.c` | 579 | IR pretty printer with source location annotations |
-| `amdgpu_isel.c` | 1,788 | Instruction selection: BIR → AMDGPU machine ops |
-| `amdgpu_emit.c` | 1,735 | Register allocation + GFX11 binary encoding + ELF emission |
-| `main.c` | 317 | CLI driver |
-| **Total** | **15,117** | |
-
-All data structures use pre-allocated fixed-size arrays. No malloc in hot paths. No recursion. Bounded loops everywhere. The kind of code that would make JPL's coding standards committee nod approvingly before going back to landing things on Mars.
 
 ## What Doesn't Work (Yet)
 
@@ -202,7 +190,7 @@ The IR (BIR) is target-independent. The backend is cleanly separated. Adding a n
 5. Because open hardware deserves open compilers
 6. I wasn't going to play video games anyway (lie)
 
-## GFX11 Encoding Notes (For The Brave)
+## GFX11/GFX12 Encoding Notes (For The Brave)
 
 If you're considering writing your own AMDGPU backend, here are the things that will ruin your afternoon:
 
@@ -212,6 +200,7 @@ If you're considering writing your own AMDGPU backend, here are the things that 
 - Null SADDR is `0x7C` for global memory, `0xFC` for scratch
 - RDNA 3 is Wave32 by default, not Wave64 like GCN
 - The ISA manual is 500 pages and contradicts itself at least twice
+- GFX12 FLAT/GLOBAL OP field is at `[21:14]`, not `[20:13]` like the RDNA4 PDF claims. Trust the machine-readable ISA, not the PDF
 
 All 1,735 lines of `amdgpu_emit.c` are a testament to reading those pages so you don't have to.
 
