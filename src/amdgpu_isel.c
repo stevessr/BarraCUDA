@@ -1118,6 +1118,7 @@ static void isel_shared_alloc(uint32_t idx, const bir_inst_t *I)
 
 static void isel_global_ref(uint32_t idx, const bir_inst_t *I)
 {
+    (void)I;
     /* Hidden kernarg: 64-bit pointer appended after explicit params.
        Load into SGPR pair for saddr, VGPR gets zero offset. */
     uint32_t offst = S.hkrarg;
