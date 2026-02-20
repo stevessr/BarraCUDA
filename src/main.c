@@ -65,8 +65,9 @@ static void usage(const char *prog)
         "  --no-pp       Skip preprocessor\n"
         "  -I <dir>      Add include search path\n"
         "  -D <name[=val]> Define a preprocessor macro\n"
-        "  --amdgpu      Compile to AMDGCN assembly (gfx1100)\n"
+        "  --amdgpu      Compile to AMDGCN assembly (default: gfx1100)\n"
         "  --amdgpu-bin  Compile to AMDGPU ELF code object (.hsaco)\n"
+        "  --gfx1200     Target RDNA 4 (gfx1200) instead of gfx1100\n"
         "  -o <file>     Output file (for --amdgpu-bin)\n"
         "  --help        Show this message\n"
         "\n", prog);
@@ -85,6 +86,7 @@ int main(int argc, char *argv[])
     int mode_amdgpu_bin = 0;
     int no_mem2reg = 0;
     int no_pp = 0;
+    amd_target_t amd_target = AMD_TARGET_GFX1100;
 
     /* Collect -I and -D options for preprocessor */
     const char *include_paths[PP_MAX_INCLUDE_PATHS];
@@ -109,6 +111,8 @@ int main(int argc, char *argv[])
             mode_amdgpu = 1;
         else if (strcmp(argv[i], "--amdgpu-bin") == 0)
             mode_amdgpu_bin = 1;
+        else if (strcmp(argv[i], "--gfx1200") == 0)
+            amd_target = AMD_TARGET_GFX1200;
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             output_file = argv[++i];
         else if (strcmp(argv[i], "-I") == 0 && i + 1 < argc) {
@@ -290,6 +294,7 @@ int main(int argc, char *argv[])
                         free(bir_module);
                         return 1;
                     }
+                    amd->target = amd_target;
                     int arc = amdgpu_compile(bir_module, amd);
                     if (arc == BC_OK) {
                         amdgpu_regalloc(amd);

@@ -5,7 +5,7 @@
 
 /*
  * AMDGPU backend for BarraCUDA.
- * Targets RDNA 3 (gfx1100), Wave32.
+ * Targets RDNA 3 (gfx1100) and RDNA 4 (gfx1200), Wave32.
  * Compiles BIR SSA to AMDGCN machine IR, then emits assembly text
  * or binary ELF code objects (.hsaco).
  * Built with the quiet confidence of someone who reads ISA manuals for fun.
@@ -13,7 +13,14 @@
 
 #define BC_ERR_AMDGPU   -6
 
-/* ---- RDNA 3 Target Constants ---- */
+/* ---- Target Selection ---- */
+
+typedef enum {
+    AMD_TARGET_GFX1100,   /* RDNA 3 */
+    AMD_TARGET_GFX1200,   /* RDNA 4 */
+} amd_target_t;
+
+/* ---- Target Constants ---- */
 
 #define AMD_MAX_SGPRS       102
 #define AMD_MAX_VGPRS       256
@@ -44,6 +51,7 @@
 #define EM_AMDGPU                224
 #define ELFOSABI_AMDGPU_HSA      64
 #define EF_AMDGPU_MACH_AMDGCN_GFX1100  0x41
+#define EF_AMDGPU_MACH_AMDGCN_GFX1200  0x48
 
 /* ---- Instruction Encoding Formats ---- */
 
@@ -115,6 +123,10 @@ typedef enum {
     AMD_S_BARRIER,
     AMD_S_WAITCNT,
     AMD_S_NOP,
+    AMD_S_WAIT_LOADCNT,   /* GFX12: wait for VMEM loads */
+    AMD_S_WAIT_STORECNT,  /* GFX12: wait for VMEM stores */
+    AMD_S_WAIT_DSCNT,     /* GFX12: wait for DS/LDS */
+    AMD_S_WAIT_KMCNT,     /* GFX12: wait for scalar memory */
 
     /* -- SMEM: scalar memory -- */
     AMD_S_LOAD_DWORD,
@@ -318,6 +330,7 @@ typedef struct {
 
 typedef struct {
     const bir_module_t *bir;
+    amd_target_t target;
 
     minst_t     minsts[AMD_MAX_MINSTS];
     uint32_t    num_minsts;

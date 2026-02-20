@@ -409,6 +409,51 @@ static uint32_t emit2f(uint16_t op, moperand_t dst, moperand_t s0,
     return emit_minst(op, 1, 2, ops, flags);
 }
 
+/* ---- Wait Helpers (GFX11 vs GFX12) ---- */
+
+/* GFX12 splits s_waitcnt into per-counter instructions.
+   These helpers pick the right one so isel doesn't have to care. */
+
+static void emit_wait_vm(void)
+{
+    if (S.amd->target >= AMD_TARGET_GFX1200) {
+        emit0_0(AMD_S_WAIT_LOADCNT, 0);
+        emit0_0(AMD_S_WAIT_STORECNT, 0);
+    } else {
+        emit0_0(AMD_S_WAITCNT, AMD_WAIT_VMCNT0);
+    }
+}
+
+static void emit_wait_smem(void)
+{
+    if (S.amd->target >= AMD_TARGET_GFX1200) {
+        emit0_0(AMD_S_WAIT_KMCNT, 0);
+    } else {
+        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+    }
+}
+
+static void emit_wait_ds(void)
+{
+    if (S.amd->target >= AMD_TARGET_GFX1200) {
+        emit0_0(AMD_S_WAIT_DSCNT, 0);
+    } else {
+        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+    }
+}
+
+static void emit_wait_all(void)
+{
+    if (S.amd->target >= AMD_TARGET_GFX1200) {
+        emit0_0(AMD_S_WAIT_LOADCNT, 0);
+        emit0_0(AMD_S_WAIT_STORECNT, 0);
+        emit0_0(AMD_S_WAIT_KMCNT, 0);
+        emit0_0(AMD_S_WAIT_DSCNT, 0);
+    } else {
+        emit0_0(AMD_S_WAITCNT, AMD_WAIT_ALL);
+    }
+}
+
 /* ---- Resolve BIR Value to Machine Operand ---- */
 
 static moperand_t resolve_val(uint32_t val, int want_vector)
@@ -911,25 +956,25 @@ static void isel_load(uint32_t idx, const bir_inst_t *I, int div)
             moperand_t vaddr = ensure_vgpr(resolve_val(I->operands[0], div));
             emit2(AMD_GLOBAL_LOAD_DWORD, mop_vreg_v((uint16_t)vr), vaddr, mop_imm(0));
         }
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_VMCNT0);
+        emit_wait_vm();
         break;
     }
     case BIR_AS_SHARED: {
         moperand_t vaddr = ensure_vgpr(resolve_val(I->operands[0], div));
         emit2(AMD_DS_READ_B32, mop_vreg_v((uint16_t)vr), vaddr, mop_imm(0));
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+        emit_wait_ds();
         break;
     }
     case BIR_AS_CONSTANT: {
         moperand_t addr = resolve_val(I->operands[0], 0);
         emit2(AMD_S_LOAD_DWORD, mop_vreg_s((uint16_t)vr), addr, mop_imm(0));
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+        emit_wait_smem();
         break;
     }
     case BIR_AS_PRIVATE: {
         moperand_t vaddr = ensure_vgpr(resolve_val(I->operands[0], div));
         emit2(AMD_SCRATCH_LOAD_DWORD, mop_vreg_v((uint16_t)vr), vaddr, mop_imm(0));
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_VMCNT0);
+        emit_wait_vm();
         break;
     }
     default:
@@ -1131,7 +1176,7 @@ static void isel_global_ref(uint32_t idx, const bir_inst_t *I)
 
     emit2(AMD_S_LOAD_DWORDX2, mop_sgpr(sbase),
           mop_sgpr(AMD_SGPR_KERNARG_LO), mop_imm((int32_t)offst));
-    emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+    emit_wait_smem();
     S.amd->val_sbase[idx] = sbase;
 
     uint32_t vr = map_bir_val(idx, 1);
@@ -1302,7 +1347,7 @@ static void isel_param(uint32_t idx, const bir_inst_t *I)
 
             emit2(AMD_S_LOAD_DWORDX2, mop_sgpr(base_sgpr),
                   mop_sgpr(AMD_SGPR_KERNARG_LO), mop_imm((int32_t)offset));
-            emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+            emit_wait_smem();
             S.amd->val_sbase[idx] = base_sgpr;
 
             /* VGPR offset starts at 0 (base + 0 = base address) */
@@ -1314,7 +1359,7 @@ static void isel_param(uint32_t idx, const bir_inst_t *I)
             uint32_t vr = map_bir_val(idx, 0);
             emit2(AMD_S_LOAD_DWORD, mop_vreg_s((uint16_t)vr),
                   mop_sgpr(AMD_SGPR_KERNARG_LO), mop_imm((int32_t)offset));
-            emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+            emit_wait_smem();
         }
     } else {
         /* Device function: params in v0, v1, ... */
@@ -1357,7 +1402,7 @@ static void isel_thread_model(uint32_t idx, const bir_inst_t *I)
         uint32_t offset = 4 + dim * 2;
         emit2(AMD_S_LOAD_DWORD, mop_vreg_s((uint16_t)vr),
               mop_sgpr(AMD_SGPR_DISPATCH_LO), mop_imm((int32_t)offset));
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+        emit_wait_smem();
         /* Mask to 16 bits */
         emit2(AMD_S_AND_B32, mop_vreg_s((uint16_t)vr),
               mop_vreg_s((uint16_t)vr), mop_imm(0xFFFF));
@@ -1369,7 +1414,7 @@ static void isel_thread_model(uint32_t idx, const bir_inst_t *I)
         uint32_t gs_off = 12 + dim * 4; /* grid_size_x=12, y=16, z=20 */
         emit2(AMD_S_LOAD_DWORD, mop_vreg_s((uint16_t)vr),
               mop_sgpr(AMD_SGPR_DISPATCH_LO), mop_imm((int32_t)gs_off));
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+        emit_wait_smem();
         break;
     }
     default:
@@ -1379,7 +1424,7 @@ static void isel_thread_model(uint32_t idx, const bir_inst_t *I)
 
 static void isel_barrier(void)
 {
-    emit0_0(AMD_S_WAITCNT, AMD_WAIT_ALL);
+    emit_wait_all();
     emit0_0(AMD_S_BARRIER, 0);
 }
 
@@ -1414,7 +1459,7 @@ static void isel_atomic(uint32_t idx, const bir_inst_t *I, int div)
         default: ds_op = AMD_DS_ADD_RTN_U32; break;
         }
         emit2(ds_op, dst, addr, val);
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+        emit_wait_ds();
     } else {
         /* Global atomics */
         moperand_t val = (nops > 1) ? ensure_vgpr(resolve_val(I->operands[1], 1)) : mop_imm(0);
@@ -1439,7 +1484,7 @@ static void isel_atomic(uint32_t idx, const bir_inst_t *I, int div)
         } else {
             emit2f(glb_op, dst, addr, val, AMD_FLAG_GLC);
         }
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_VMCNT0);
+        emit_wait_vm();
     }
 }
 
@@ -1449,7 +1494,7 @@ static void isel_atomic_load(uint32_t idx, const bir_inst_t *I, int div)
     moperand_t addr = ensure_vgpr(resolve_val(I->operands[0], div));
     uint32_t vr = map_bir_val(idx, 1);
     emit2f(AMD_GLOBAL_LOAD_DWORD, mop_vreg_v((uint16_t)vr), addr, mop_imm(0), AMD_FLAG_GLC);
-    emit0_0(AMD_S_WAITCNT, AMD_WAIT_VMCNT0);
+    emit_wait_vm();
 }
 
 static void isel_atomic_store(const bir_inst_t *I, int div)
@@ -1476,7 +1521,7 @@ static void isel_warp(uint32_t idx, const bir_inst_t *I)
         emit2(AMD_V_LSHLREV_B32, mop_vreg_v((uint16_t)addr_v), mop_imm(2), lane);
         emit2(AMD_DS_BPERMUTE_B32, mop_vreg_v((uint16_t)vr),
               mop_vreg_v((uint16_t)addr_v), val);
-        emit0_0(AMD_S_WAITCNT, AMD_WAIT_LGKMCNT0);
+        emit_wait_ds();
         break;
     }
     case BIR_BALLOT: {

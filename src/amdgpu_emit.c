@@ -63,6 +63,10 @@ const amd_enc_entry_t amd_enc_table[AMD_OP_COUNT] = {
     [AMD_S_BARRIER]          = { AMD_FMT_SOPP, 0x3D, "s_barrier"          },
     [AMD_S_WAITCNT]          = { AMD_FMT_SOPP, 0x09, "s_waitcnt"          },
     [AMD_S_NOP]              = { AMD_FMT_SOPP, 0x00, "s_nop"              },
+    [AMD_S_WAIT_LOADCNT]     = { AMD_FMT_SOPP, 0x40, "s_wait_loadcnt"    },
+    [AMD_S_WAIT_STORECNT]    = { AMD_FMT_SOPP, 0x41, "s_wait_storecnt"   },
+    [AMD_S_WAIT_DSCNT]       = { AMD_FMT_SOPP, 0x46, "s_wait_dscnt"     },
+    [AMD_S_WAIT_KMCNT]       = { AMD_FMT_SOPP, 0x47, "s_wait_kmcnt"     },
 
     /* SMEM — GFX11: prefix=0x3D, OP at [25:18] */
     [AMD_S_LOAD_DWORD]       = { AMD_FMT_SMEM, 0x00, "s_load_dword"       },
@@ -676,6 +680,11 @@ static void print_minst(amd_module_t *A, const minst_t *mi)
                 asm_append(A, " lgkmcnt(0)");
             else
                 asm_append(A, " 0x%04x", w);
+        } else if (mi->op == AMD_S_WAIT_LOADCNT ||
+                   mi->op == AMD_S_WAIT_STORECNT ||
+                   mi->op == AMD_S_WAIT_DSCNT ||
+                   mi->op == AMD_S_WAIT_KMCNT) {
+            asm_append(A, " 0x%x", mi->flags);
         } else if (mi->num_uses > 0) {
             asm_append(A, " ");
             print_operand(A, &mi->operands[0]);
@@ -807,7 +816,9 @@ void amdgpu_emit_asm(const amd_module_t *amd, FILE *out)
     amd_module_t *A = (amd_module_t *)amd;
 
     A->asm_len = 0;
-    asm_append(A, "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1100\"\n");
+    asm_append(A, (A->target == AMD_TARGET_GFX1200)
+        ? "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1200\"\n"
+        : "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1100\"\n");
     asm_append(A, "    .text\n\n");
 
     for (uint32_t fi = 0; fi < A->num_mfuncs; fi++) {
@@ -973,9 +984,6 @@ static void encode_sopp(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
 
 static void encode_smem(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
 {
-    /* GFX11 SMEM: 2 dwords
-       DW0: [31:26]=111101 [25:18]=OP [17:12]=SDATA [11:6]=reserved [5:0]=SBASE
-       DW1: [31:25]=SOFFSET(0x7C=null) [24:21]=0 [20:0]=OFFSET */
     uint8_t sdata = (mi->num_defs > 0 && mi->operands[0].kind == MOP_SGPR) ?
                     (uint8_t)mi->operands[0].reg_num : 0;
     uint8_t sbase = 0;
@@ -985,11 +993,25 @@ static void encode_smem(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
     if (mi->num_uses > 1)
         offset = mi->operands[mi->num_defs + 1].imm;
 
-    uint32_t dw0 = (0x3Du << 26) | ((uint32_t)(hw_op & 0xFF) << 18) |
-                   ((uint32_t)(sdata & 0x7F) << 6) | (uint32_t)(sbase & 0x3F);
-    uint32_t dw1 = (0x7Cu << 25) | ((uint32_t)offset & 0x1FFFFF);
-    emit_dword(A, dw0);
-    emit_dword(A, dw1);
+    if (A->target >= AMD_TARGET_GFX1200) {
+        /* GFX12 SMEM: 2 dwords
+           DW0: [31:26]=111101 [24:23]=TH [22:21]=SCOPE [18:13]=OP(6) [12:6]=SDATA [5:0]=SBASE
+           DW1: [31:25]=SOFFSET(0x7C=null) [23:0]=IOFFSET(24-bit) */
+        uint32_t dw0 = (0x3Du << 26) | ((uint32_t)(hw_op & 0x3F) << 13) |
+                       ((uint32_t)(sdata & 0x7F) << 6) | (uint32_t)(sbase & 0x3F);
+        uint32_t dw1 = (0x7Cu << 25) | ((uint32_t)offset & 0xFFFFFF);
+        emit_dword(A, dw0);
+        emit_dword(A, dw1);
+    } else {
+        /* GFX11 SMEM: 2 dwords
+           DW0: [31:26]=111101 [25:18]=OP(8) [12:6]=SDATA [5:0]=SBASE
+           DW1: [31:25]=SOFFSET(0x7C=null) [20:0]=OFFSET(21-bit) */
+        uint32_t dw0 = (0x3Du << 26) | ((uint32_t)(hw_op & 0xFF) << 18) |
+                       ((uint32_t)(sdata & 0x7F) << 6) | (uint32_t)(sbase & 0x3F);
+        uint32_t dw1 = (0x7Cu << 25) | ((uint32_t)offset & 0x1FFFFF);
+        emit_dword(A, dw0);
+        emit_dword(A, dw1);
+    }
 }
 
 static void encode_vop1(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
@@ -1096,26 +1118,21 @@ static void encode_ds(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
 
 static void encode_flat_global(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
 {
-    /* GFX11 FLAT/GLOBAL/SCRATCH: 2 dwords
-       DW0: [31:26]=110111 [25:18]=OP [17:16]=SEG [15:14]=flags [13:0]=OFFSET
-       DW1: [31:24]=VDST [23:16]=SADDR [15:8]=DATA [7:0]=ADDR */
     uint8_t vdst = 0, addr = 0, data = 0;
     int32_t offset = 0;
-
-    uint8_t seg = 2; /* global */
-    if (amd_enc_table[mi->op].fmt == AMD_FMT_FLAT_SCR) seg = 1;
-
-    /* GFX11 null SADDR: 0x7C for global (sgpr_null), 0xFC for scratch */
-    uint32_t saddr = (seg == 1) ? 0xFC : 0x7C;
+    int is_scratch = (amd_enc_table[mi->op].fmt == AMD_FMT_FLAT_SCR);
 
     /* Extract def: VDST */
     if (mi->num_defs > 0 && mi->operands[0].kind == MOP_VGPR)
         vdst = (uint8_t)mi->operands[0].reg_num;
 
+    /* Default null SADDR */
+    uint32_t saddr = 0x7C; /* sgpr_null */
+
     /* Walk use operands: 1st VGPR=addr, 2nd VGPR=data, SGPR=saddr, IMM=offset */
     uint8_t use_base = mi->num_defs;
     int got_addr = 0;
-    for (uint8_t k = use_base; k < use_base + mi->num_uses && k < MINST_MAX_OPS; k++) {
+    for (uint8_t k = use_base; k < (uint8_t)(use_base + mi->num_uses) && k < MINST_MAX_OPS; k++) {
         const moperand_t *op = &mi->operands[k];
         if (op->kind == MOP_VGPR) {
             if (!got_addr) { addr = (uint8_t)op->reg_num; got_addr = 1; }
@@ -1127,14 +1144,45 @@ static void encode_flat_global(amd_module_t *A, const minst_t *mi, uint16_t hw_o
         }
     }
 
-    uint32_t off_lo = (uint32_t)offset & 0x1FFF;
-    uint32_t dw0 = (0x37u << 26) | ((uint32_t)(hw_op & 0xFF) << 18) |
-                   ((uint32_t)seg << 16) | off_lo;
-    uint32_t dw1 = ((uint32_t)vdst << 24) | ((saddr & 0xFF) << 16) |
-                   ((uint32_t)data << 8) | addr;
-    if (mi->flags & AMD_FLAG_GLC) dw0 |= (1u << 14);
-    emit_dword(A, dw0);
-    emit_dword(A, dw1);
+    if (A->target >= AMD_TARGET_GFX1200) {
+        /* GFX12 FLAT/GLOBAL/SCRATCH: 3 dwords (96-bit)
+           DW0: [31:24]=ENCODING [20:13]=OP [6:0]=SADDR
+           DW1: [30:23]=VSRC [22:20]=TH [19:18]=SCOPE [17]=SVE [7:0]=VDST
+           DW2: [31:8]=IOFFSET(24-bit) [7:0]=VADDR
+           Encoding: global=0xEE, scratch=0xED */
+        uint8_t enc = is_scratch ? 0xED : 0xEE;
+        uint8_t sve = is_scratch ? 1 : 0;
+
+        uint32_t dw0 = ((uint32_t)enc << 24) |
+                       ((uint32_t)(hw_op & 0xFF) << 13) |
+                       (saddr & 0x7F);
+        uint32_t dw1 = ((uint32_t)data << 23) |
+                       ((uint32_t)sve << 17) |
+                       (uint32_t)vdst;
+        uint32_t dw2 = (((uint32_t)offset & 0xFFFFFF) << 8) |
+                       (uint32_t)addr;
+
+        if (mi->flags & AMD_FLAG_GLC) dw1 |= (1u << 20); /* TH[0] */
+
+        emit_dword(A, dw0);
+        emit_dword(A, dw1);
+        emit_dword(A, dw2);
+    } else {
+        /* GFX11 FLAT/GLOBAL/SCRATCH: 2 dwords (64-bit)
+           DW0: [31:26]=110111 [25:18]=OP [17:16]=SEG [15:14]=flags [13:0]=OFFSET
+           DW1: [31:24]=VDST [23:16]=SADDR [15:8]=DATA [7:0]=ADDR */
+        uint8_t seg = is_scratch ? 1 : 2;
+        if (is_scratch && saddr == 0x7C) saddr = 0xFC; /* GFX11 scratch null */
+
+        uint32_t off_lo = (uint32_t)offset & 0x1FFF;
+        uint32_t dw0 = (0x37u << 26) | ((uint32_t)(hw_op & 0xFF) << 18) |
+                       ((uint32_t)seg << 16) | off_lo;
+        uint32_t dw1 = ((uint32_t)vdst << 24) | ((saddr & 0xFF) << 16) |
+                       ((uint32_t)data << 8) | addr;
+        if (mi->flags & AMD_FLAG_GLC) dw0 |= (1u << 14);
+        emit_dword(A, dw0);
+        emit_dword(A, dw1);
+    }
 }
 
 /* Instruction offsets for branch fixup */
@@ -1176,8 +1224,10 @@ static void encode_function(amd_module_t *A, uint32_t mf_idx)
                 }
                 break;
             case AMD_FMT_SMEM: case AMD_FMT_VOP3: case AMD_FMT_DS:
-            case AMD_FMT_FLAT_GBL: case AMD_FMT_FLAT_SCR:
                 offset += 8;
+                break;
+            case AMD_FMT_FLAT_GBL: case AMD_FMT_FLAT_SCR:
+                offset += (A->target >= AMD_TARGET_GFX1200) ? 12 : 8;
                 break;
             case AMD_FMT_PSEUDO:
                 break; /* no bytes */
@@ -1654,7 +1704,9 @@ int amdgpu_emit_elf(amd_module_t *A, const char *path)
     ehdr.e_entry = 0;
     ehdr.e_phoff = 0;
     ehdr.e_shoff = shdr_off;
-    ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1100;
+    ehdr.e_flags = (A->target == AMD_TARGET_GFX1200)
+                   ? EF_AMDGPU_MACH_AMDGCN_GFX1200
+                   : EF_AMDGPU_MACH_AMDGCN_GFX1100;
     ehdr.e_ehsize = 64;
     ehdr.e_phentsize = 0;
     ehdr.e_phnum = 0;
