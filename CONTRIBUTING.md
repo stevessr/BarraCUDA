@@ -51,7 +51,7 @@ If in doubt, open an issue first. A two-minute conversation saves everyone time.
 
 ## GPU Architectures
 
-BarraCUDA currently targets AMD RDNA 3 (gfx1100). That is by no means the only architecture on the roadmap.
+BarraCUDA currently targets AMD RDNA 3 and 4 (gfx1100/1200). That is by no means the only architectures on the roadmap.
 
 The compiler architecture is purposefully backend-agnostic: the frontend lowers to BIR (BarraCUDA IR) in SSA form, and each backend is a self-contained target that consumes BIR. Adding a new GPU architecture means writing a new instruction selector and emitter — the rest of the pipeline is shared.
 
