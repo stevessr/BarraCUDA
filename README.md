@@ -183,14 +183,7 @@ The IR (BIR) is target-independent. The backend is cleanly separated. Adding a n
 - **Intel Arc** - Xe architecture. Would give BarraCUDA coverage across all three major GPU vendors.
 - **RISC-V Vector Extension** - For when GPUs are too mainstream and you want to run CUDA on a softcore.
 
-## Why Does This Exist?
 
-1. Because CUDA shouldn't require an NVIDIA GPU
-2. Because HIP translation is a workaround, not a solution
-3. Because a few thousand lines of C is a more honest compiler than a million lines of LLVM
-4. Because someone should prove it's possible to write a GPU compiler backend by hand
-5. Because open hardware deserves open compilers
-6. I wasn't going to play video games anyway (lie)
 
 ## GFX11/GFX12 Encoding Notes (For The Brave)
 
