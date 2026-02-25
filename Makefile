@@ -26,7 +26,8 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # ---- Test Suite ----
-TCFLAGS = -std=c99 -Wall -Wextra -O0 -g -Isrc -Isrc/fe -Isrc/ir -Isrc/amdgpu
+TCFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -O0 -g \
+          -Isrc -Isrc/fe -Isrc/ir -Isrc/amdgpu
 TSRC    = tests/tmain.c tests/tsmoke.c tests/tcomp.c tests/tenc.c \
           tests/ttabs.c tests/ttypes.c tests/terrs.c tests/tphase.c
 TOBJS   = $(TSRC:.c=.o)

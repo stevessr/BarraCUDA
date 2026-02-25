@@ -20,10 +20,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install GCC
+        run: brew install gcc
       - name: Build
-        run: make
+        run: make CC=gcc-14
       - name: Test
-        run: make test
+        run: make test CC=gcc-14
 
   windows:
     runs-on: windows-latest
