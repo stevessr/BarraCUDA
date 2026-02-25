@@ -4,11 +4,11 @@ An open-source CUDA C++ compiler written from scratch in C99 that takes `.cu` fi
 
 This is what happens when you look at NVIDIA's walled garden and think "how hard can it be?" The answer is: quite hard, actually, but I did it anyway.
 
-**UPDATE: RDNA 4 now supported.** `--gfx1200`
+**UPDATE: RDNA 2, 3 and 4 now supported.** `--gfx1030` / `--gfx1100` / `--gfx1200`
 
 ## What It Does
 
-Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 3 (gfx1100) and RDNA 4 (gfx1200) binaries. No LLVM. No HIP translation layer. No "convert your CUDA to something else first." Just a lexer, a parser, an IR, and a hand-written instruction selection backend that would make a compiler textbook weep.
+Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 2 (gfx1030), RDNA 3 (gfx1100) and RDNA 4 (gfx1200) binaries. No LLVM. No HIP translation layer. No "convert your CUDA to something else first." Just a lexer, a parser, an IR, and a hand-written instruction selection backend that would make a compiler textbook weep.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -32,7 +32,7 @@ Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compile
 │       ↓                                                      │
 │  Register Allocation → VGPR/SGPR assignment                  │
 │       ↓                                                      │
-│  Binary Encoding → GFX11/GFX12 instruction words              │
+│  Binary Encoding → GFX10/GFX11/GFX12 instruction words         │
 │       ↓                                                      │
 │  ELF Emission → .hsaco ready for the GPU                     │
 │       ↓                                                      │
@@ -64,6 +64,9 @@ make
 # Compile to AMD GPU binary (RDNA 3, default)
 ./barracuda --amdgpu-bin kernel.cu -o kernel.hsaco
 
+# Compile for RDNA 2
+./barracuda --amdgpu-bin --gfx1030 kernel.cu -o kernel.hsaco
+
 # Compile for RDNA 4
 ./barracuda --amdgpu-bin --gfx1200 kernel.cu -o kernel.hsaco
 
@@ -77,9 +80,26 @@ make
 ./barracuda --sema kernel.cu
 ```
 
+## Runtime Launcher
+
+BarraCUDA includes a minimal HSA runtime (`src/runtime/`) for dispatching compiled kernels on real AMD hardware. Zero compile-time dependency on ROCm — loads `libhsa-runtime64.so` at runtime via `dlopen`.
+
+```bash
+# Compile the runtime and example together
+gcc -std=c99 -O2 -I src/runtime \
+    examples/launch_saxpy.c src/runtime/bc_runtime.c \
+    -ldl -lm -o launch_saxpy
+
+# Compile a kernel and run it
+./barracuda --amdgpu-bin -o test.hsaco tests/canonical.cu
+./launch_saxpy test.hsaco
+```
+
+Requires Linux with ROCm installed. See `examples/launch_saxpy.c` for a complete example. **Not yet tested on real hardware** — if you have an AMD GPU, we'd love a test report ([#39](https://github.com/Zaneham/BarraCUDA/issues/39)).
+
 ## What Works
 
- The following CUDA features compile to working GFX11/GFX12 machine code:
+ The following CUDA features compile to working GFX10/GFX11/GFX12 machine code:
 
 ### Core Language
 - `__global__`, `__device__`, `__host__` function qualifiers
@@ -185,7 +205,7 @@ The IR (BIR) is target-independent. The backend is cleanly separated. Adding a n
 
 
 
-## GFX11/GFX12 Encoding Notes (For The Brave)
+## GFX10/GFX11/GFX12 Encoding Notes (For The Brave)
 
 If you're considering writing your own AMDGPU backend, here are the things that will ruin your afternoon:
 
@@ -196,6 +216,11 @@ If you're considering writing your own AMDGPU backend, here are the things that 
 - RDNA 3 is Wave32 by default, not Wave64 like GCN
 - The ISA manual is 500 pages and contradicts itself at least twice
 - GFX12 FLAT/GLOBAL OP field is at `[21:14]`, not `[20:13]` like the RDNA4 PDF claims. Trust the machine-readable ISA, not the PDF
+- GFX10 SMEM prefix is `0x3C` (not `0x3D`), with different bit layout for SDATA/SBASE/OP
+- GFX10 VOP3 prefix is `0x34` (not `0x35`)
+- GFX10 FLAT/GLOBAL DW1 has DATA and SADDR swapped vs GFX11, null SADDR is `0x7D`
+- GFX10 waitcnt SIMM16 layout: `[15:14]=vmcnt[5:4] [13:11]=expcnt [9:4]=lgkmcnt [3:0]=vmcnt[3:0]`
+- Nearly every hw_opcode is renumbered between GFX10 and GFX11
 
 `amdgpu_emit.c` is a testament to reading those pages so you don't have to.
 
