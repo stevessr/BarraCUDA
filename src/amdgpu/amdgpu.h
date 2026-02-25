@@ -5,7 +5,7 @@
 
 /*
  * AMDGPU backend for BarraCUDA.
- * Targets RDNA 3 (gfx1100) and RDNA 4 (gfx1200), Wave32.
+ * Targets RDNA 2 (gfx1030), RDNA 3 (gfx1100), and RDNA 4 (gfx1200), Wave32.
  * Compiles BIR SSA to AMDGCN machine IR, then emits assembly text
  * or binary ELF code objects (.hsaco).
  * Built with the quiet confidence of someone who reads ISA manuals for fun.
@@ -16,6 +16,7 @@
 /* ---- Target Selection ---- */
 
 typedef enum {
+    AMD_TARGET_GFX1030,   /* RDNA 2 */
     AMD_TARGET_GFX1100,   /* RDNA 3 */
     AMD_TARGET_GFX1200,   /* RDNA 4 */
 } amd_target_t;
@@ -50,6 +51,7 @@ typedef enum {
 /* ELF constants */
 #define EM_AMDGPU                224
 #define ELFOSABI_AMDGPU_HSA      64
+#define EF_AMDGPU_MACH_AMDGCN_GFX1030  0x36
 #define EF_AMDGPU_MACH_AMDGCN_GFX1100  0x41
 #define EF_AMDGPU_MACH_AMDGCN_GFX1200  0x48
 
@@ -400,5 +402,6 @@ int  amdgpu_emit_elf(amd_module_t *amd, const char *path);
 
 /* Encoding table (defined in amdgpu_emit.c) */
 extern const amd_enc_entry_t amd_enc_table[AMD_OP_COUNT];
+extern const amd_enc_entry_t amd_enc_table_gfx10[AMD_OP_COUNT];
 
 #endif /* BARRACUDA_AMDGPU_H */

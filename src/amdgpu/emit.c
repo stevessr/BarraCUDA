@@ -7,7 +7,7 @@
 /*
  * AMDGPU emitter: phi elimination, register allocation, assembly printer,
  * and ELF code object writer.
- * Targets RDNA 3 (gfx1100) and RDNA 4 (gfx1200), Wave32.
+ * Targets RDNA 2 (gfx1030), RDNA 3 (gfx1100), and RDNA 4 (gfx1200), Wave32.
  * Dependencies: libc, optimism, tea.
  */
 
@@ -466,7 +466,8 @@ static void print_sgpr_pair(amd_module_t *A, uint16_t base)
 static void print_minst(amd_module_t *A, const minst_t *mi)
 {
     if (mi->op >= AMD_OP_COUNT) return;
-    const amd_enc_entry_t *enc = &amd_enc_table[mi->op];
+    const amd_enc_entry_t *tbl = get_enc_table(A);
+    const amd_enc_entry_t *enc = &tbl[mi->op];
     if (enc->mnemonic == NULL) return;
 
     /* Skip pseudo-instructions that survived */
@@ -653,9 +654,14 @@ void amdgpu_emit_asm(const amd_module_t *amd, FILE *out)
     amd_module_t *A = (amd_module_t *)amd;
 
     A->asm_len = 0;
-    asm_append(A, (A->target == AMD_TARGET_GFX1200)
-        ? "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1200\"\n"
-        : "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1100\"\n");
+    const char *tgt_str;
+    if (A->target == AMD_TARGET_GFX1200)
+        tgt_str = "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1200\"\n";
+    else if (A->target == AMD_TARGET_GFX1030)
+        tgt_str = "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1030\"\n";
+    else
+        tgt_str = "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1100\"\n";
+    asm_append(A, "%s", tgt_str);
     asm_append(A, "    .text\n\n");
 
     for (uint32_t fi = 0; fi < A->num_mfuncs; fi++) {
@@ -910,9 +916,14 @@ int amdgpu_emit_elf(amd_module_t *A, const char *path)
     mp_uint(mp_buf, &mp_pos, 2);
 
     mp_fixstr(mp_buf, &mp_pos, "amdhsa.target");
-    mp_str(mp_buf, &mp_pos, (A->target == AMD_TARGET_GFX1200)
-        ? "amdgcn-amd-amdhsa--gfx1200"
-        : "amdgcn-amd-amdhsa--gfx1100");
+    const char *mp_tgt;
+    if (A->target == AMD_TARGET_GFX1200)
+        mp_tgt = "amdgcn-amd-amdhsa--gfx1200";
+    else if (A->target == AMD_TARGET_GFX1030)
+        mp_tgt = "amdgcn-amd-amdhsa--gfx1030";
+    else
+        mp_tgt = "amdgcn-amd-amdhsa--gfx1100";
+    mp_str(mp_buf, &mp_pos, mp_tgt);
 
     mp_fixstr(mp_buf, &mp_pos, "amdhsa.kernels");
     uint8_t nk = (num_kernels > 15) ? 15 : (uint8_t)num_kernels;
@@ -1092,9 +1103,12 @@ int amdgpu_emit_elf(amd_module_t *A, const char *path)
     ehdr.e_entry = 0;
     ehdr.e_phoff = 0;
     ehdr.e_shoff = shdr_off;
-    ehdr.e_flags = (A->target == AMD_TARGET_GFX1200)
-                   ? EF_AMDGPU_MACH_AMDGCN_GFX1200
-                   : EF_AMDGPU_MACH_AMDGCN_GFX1100;
+    if (A->target == AMD_TARGET_GFX1200)
+        ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1200;
+    else if (A->target == AMD_TARGET_GFX1030)
+        ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1030;
+    else
+        ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1100;
     ehdr.e_ehsize = 64;
     ehdr.e_phentsize = 0;
     ehdr.e_phnum = 0;

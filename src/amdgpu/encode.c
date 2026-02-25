@@ -77,6 +77,13 @@ static void emit_dword(amd_module_t *A, uint32_t dw)
     A->code_len += 4;
 }
 
+const amd_enc_entry_t *get_enc_table(const amd_module_t *A)
+{
+    return (A->target <= AMD_TARGET_GFX1030)
+           ? amd_enc_table_gfx10
+           : amd_enc_table;
+}
+
 /* Encode SDST field: handles both physical SGPRs and special registers */
 static uint8_t encode_sdst(const moperand_t *op)
 {
@@ -146,14 +153,23 @@ static void encode_sopp(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
     /* [31:23]=101111111 [22:16]=OP [15:0]=SIMM16 */
     uint16_t simm16 = 0;
     if (mi->op == AMD_S_WAITCNT) {
-        /* GFX11 waitcnt SIMM16: [15:10]=vmcnt [9:4]=lgkmcnt [3:0]=expcnt
-           Counter at 0 = wait for all; counter at max = don't wait */
         uint16_t vm   = 63;   /* max: don't wait */
         uint16_t lgkm = 63;
         uint16_t exp  = 7;
         if (mi->flags & AMD_WAIT_VMCNT0)   vm   = 0;
         if (mi->flags & AMD_WAIT_LGKMCNT0) lgkm = 0;
-        simm16 = (uint16_t)((vm << 10) | (lgkm << 4) | exp);
+
+        if (A->target <= AMD_TARGET_GFX1030) {
+            /* GFX10 waitcnt SIMM16 (verified against llvm-mc):
+               [15:14]=vmcnt[5:4] [13:8]=lgkmcnt[5:0] [6:4]=expcnt[2:0] [3:0]=vmcnt[3:0] */
+            simm16 = (uint16_t)(((vm >> 4) & 0x3) << 14) |
+                     (uint16_t)((lgkm & 0x3F) << 8) |
+                     (uint16_t)((exp & 0x7) << 4) |
+                     (uint16_t)(vm & 0xF);
+        } else {
+            /* GFX11 waitcnt SIMM16: [15:10]=vmcnt [9:4]=lgkmcnt [3:0]=expcnt */
+            simm16 = (uint16_t)((vm << 10) | (lgkm << 4) | exp);
+        }
     } else if (mi->num_uses > 0 && mi->operands[0].kind == MOP_LABEL) {
         /* Branch target: offset will be patched in fixup pass */
         simm16 = (uint16_t)mi->operands[0].imm;
@@ -184,12 +200,13 @@ static void encode_smem(amd_module_t *A, const minst_t *mi, uint16_t hw_op)
         emit_dword(A, dw0);
         emit_dword(A, dw1);
     } else {
-        /* GFX11 SMEM: 2 dwords
+        /* GFX10/GFX11 SMEM: 2 dwords (same layout, different SOFFSET null)
            DW0: [31:26]=111101 [25:18]=OP(8) [12:6]=SDATA [5:0]=SBASE
-           DW1: [31:25]=SOFFSET(0x7C=null) [20:0]=OFFSET(21-bit) */
+           DW1: [31:25]=SOFFSET [20:0]=OFFSET(21-bit) */
+        uint32_t soff_null = (A->target <= AMD_TARGET_GFX1030) ? 0x7Du : 0x7Cu;
         uint32_t dw0 = (0x3Du << 26) | ((uint32_t)(hw_op & 0xFF) << 18) |
                        ((uint32_t)(sdata & 0x7F) << 6) | (uint32_t)(sbase & 0x3F);
-        uint32_t dw1 = (0x7Cu << 25) | ((uint32_t)offset & 0x1FFFFF);
+        uint32_t dw1 = (soff_null << 25) | ((uint32_t)offset & 0x1FFFFF);
         emit_dword(A, dw0);
         emit_dword(A, dw1);
     }
@@ -301,14 +318,15 @@ static void encode_flat_global(amd_module_t *A, const minst_t *mi, uint16_t hw_o
 {
     uint8_t vdst = 0, addr = 0, data = 0;
     int32_t offset = 0;
-    int is_scratch = (amd_enc_table[mi->op].fmt == AMD_FMT_FLAT_SCR);
+    const amd_enc_entry_t *tbl = get_enc_table(A);
+    int is_scratch = (tbl[mi->op].fmt == AMD_FMT_FLAT_SCR);
 
     /* Extract def: VDST */
     if (mi->num_defs > 0 && mi->operands[0].kind == MOP_VGPR)
         vdst = (uint8_t)mi->operands[0].reg_num;
 
-    /* Default null SADDR */
-    uint32_t saddr = 0x7C; /* sgpr_null */
+    /* Default null SADDR (GFX11 default, adjusted per-target below) */
+    uint32_t saddr = 0x7C;
 
     /* Walk use operands: 1st VGPR=addr, 2nd VGPR=data, SGPR=saddr, IMM=offset */
     uint8_t use_base = mi->num_defs;
@@ -349,12 +367,30 @@ static void encode_flat_global(amd_module_t *A, const minst_t *mi, uint16_t hw_o
         emit_dword(A, dw0);
         emit_dword(A, dw1);
         emit_dword(A, dw2);
+    } else if (A->target <= AMD_TARGET_GFX1030) {
+        /* GFX10 FLAT/GLOBAL/SCRATCH: 2 dwords (64-bit)
+           DW0: [31:26]=0x37 [25]=DLC [24:18]=OP(7b) [17]=SLC [16]=GLC
+                [15:14]=SEG [12:0]=OFFSET(13b signed)
+           DW1: [31:24]=VDST [23:16]=SADDR [15:8]=DATA [7:0]=ADDR
+           Null SADDR=0x7D for both global and scratch */
+        uint8_t seg = is_scratch ? 1 : 2;
+        if (saddr == 0x7C) saddr = 0x7D;
+
+        uint32_t off_lo = (uint32_t)offset & 0x1FFF;
+        uint32_t dw0 = (0x37u << 26) | ((uint32_t)(hw_op & 0x7F) << 18) |
+                       ((uint32_t)seg << 14) | off_lo;
+        uint32_t dw1 = ((uint32_t)vdst << 24) | ((saddr & 0xFF) << 16) |
+                       ((uint32_t)data << 8) | addr;
+        if (mi->flags & AMD_FLAG_GLC) dw0 |= (1u << 16);
+        emit_dword(A, dw0);
+        emit_dword(A, dw1);
     } else {
         /* GFX11 FLAT/GLOBAL/SCRATCH: 2 dwords (64-bit)
-           DW0: [31:26]=110111 [25:18]=OP [17:16]=SEG [15:14]=flags [13:0]=OFFSET
+           DW0: [31:26]=0x37 [25:18]=OP(8b) [17:16]=SEG [14]=GLC
+                [12:0]=OFFSET(13b signed)
            DW1: [31:24]=VDST [23:16]=SADDR [15:8]=DATA [7:0]=ADDR */
         uint8_t seg = is_scratch ? 1 : 2;
-        if (is_scratch && saddr == 0x7C) saddr = 0xFC; /* GFX11 scratch null */
+        if (is_scratch && saddr == 0x7C) saddr = 0xFC;
 
         uint32_t off_lo = (uint32_t)offset & 0x1FFF;
         uint32_t dw0 = (0x37u << 26) | ((uint32_t)(hw_op & 0xFF) << 18) |
@@ -376,6 +412,7 @@ static uint32_t block_offsets[AMD_MAX_MBLOCKS];
 void encode_function(amd_module_t *A, uint32_t mf_idx)
 {
     const mfunc_t *F = &A->mfuncs[mf_idx];
+    const amd_enc_entry_t *tbl = get_enc_table(A);
 
     /* Pass 1: compute instruction byte offsets */
     uint32_t offset = A->code_len;
@@ -392,7 +429,7 @@ void encode_function(amd_module_t *A, uint32_t mf_idx)
             inst_offsets[mi_idx] = offset;
 
             if (mi->op >= AMD_OP_COUNT) { offset += 4; continue; }
-            const amd_enc_entry_t *enc = &amd_enc_table[mi->op];
+            const amd_enc_entry_t *enc = &tbl[mi->op];
 
             switch (enc->fmt) {
             case AMD_FMT_SOP2: case AMD_FMT_SOP1: case AMD_FMT_SOPC:
@@ -434,7 +471,7 @@ void encode_function(amd_module_t *A, uint32_t mf_idx)
             minst_t *mi = &A->minsts[mi_idx]; /* non-const for branch fixup */
 
             if (mi->op >= AMD_OP_COUNT) continue;
-            const amd_enc_entry_t *enc = &amd_enc_table[mi->op];
+            const amd_enc_entry_t *enc = &tbl[mi->op];
 
             /* Fix up branch targets: convert block index to PC-relative offset */
             if (enc->fmt == AMD_FMT_SOPP && mi->num_uses > 0 &&
