@@ -349,6 +349,10 @@ typedef struct {
     const bir_module_t *bir;
     amd_target_t target;
 
+    /* Chip-specific ELF metadata (set once by main, read by emit) */
+    uint32_t    elf_mach;       /* e_flags value for this exact chip */
+    char        chip_name[12];  /* "gfx1151" etc. */
+
     minst_t     minsts[AMD_MAX_MINSTS];
     uint32_t    num_minsts;
 

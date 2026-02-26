@@ -88,6 +88,8 @@ int main(int argc, char *argv[])
     int no_mem2reg = 0;
     int no_pp = 0;
     amd_target_t amd_target = AMD_TARGET_GFX1100;
+    uint32_t     amd_elfm  = 0x41;       /* EF_AMDGPU_MACH for exact chip */
+    const char  *amd_chip  = "gfx1100";  /* chip string for ELF metadata */
 
     /* Collect -I and -D options for preprocessor */
     const char *include_paths[PP_MAX_INCLUDE_PATHS];
@@ -112,10 +114,44 @@ int main(int argc, char *argv[])
             mode_amdgpu = 1;
         else if (strcmp(argv[i], "--amdgpu-bin") == 0)
             mode_amdgpu_bin = 1;
+        /* RDNA 2 (GFX10.3) */
         else if (strcmp(argv[i], "--gfx1030") == 0)
-            amd_target = AMD_TARGET_GFX1030;
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x36; amd_chip = "gfx1030"; }
+        else if (strcmp(argv[i], "--gfx1031") == 0)
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x37; amd_chip = "gfx1031"; }
+        else if (strcmp(argv[i], "--gfx1032") == 0)
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x38; amd_chip = "gfx1032"; }
+        else if (strcmp(argv[i], "--gfx1033") == 0)
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x39; amd_chip = "gfx1033"; }
+        else if (strcmp(argv[i], "--gfx1034") == 0)
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x3e; amd_chip = "gfx1034"; }
+        else if (strcmp(argv[i], "--gfx1035") == 0)
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x3d; amd_chip = "gfx1035"; }
+        else if (strcmp(argv[i], "--gfx1036") == 0)
+            { amd_target = AMD_TARGET_GFX1030; amd_elfm = 0x45; amd_chip = "gfx1036"; }
+        /* RDNA 3 (GFX11) */
+        else if (strcmp(argv[i], "--gfx1100") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x41; amd_chip = "gfx1100"; }
+        else if (strcmp(argv[i], "--gfx1101") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x46; amd_chip = "gfx1101"; }
+        else if (strcmp(argv[i], "--gfx1102") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x47; amd_chip = "gfx1102"; }
+        else if (strcmp(argv[i], "--gfx1103") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x44; amd_chip = "gfx1103"; }
+        /* RDNA 3.5 (GFX11.5) */
+        else if (strcmp(argv[i], "--gfx1150") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x43; amd_chip = "gfx1150"; }
+        else if (strcmp(argv[i], "--gfx1151") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x4a; amd_chip = "gfx1151"; }
+        else if (strcmp(argv[i], "--gfx1152") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x55; amd_chip = "gfx1152"; }
+        else if (strcmp(argv[i], "--gfx1153") == 0)
+            { amd_target = AMD_TARGET_GFX1100; amd_elfm = 0x58; amd_chip = "gfx1153"; }
+        /* RDNA 4 (GFX12) */
         else if (strcmp(argv[i], "--gfx1200") == 0)
-            amd_target = AMD_TARGET_GFX1200;
+            { amd_target = AMD_TARGET_GFX1200; amd_elfm = 0x48; amd_chip = "gfx1200"; }
+        else if (strcmp(argv[i], "--gfx1201") == 0)
+            { amd_target = AMD_TARGET_GFX1200; amd_elfm = 0x4e; amd_chip = "gfx1201"; }
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             output_file = argv[++i];
         else if (strcmp(argv[i], "-I") == 0 && i + 1 < argc) {
@@ -298,6 +334,9 @@ int main(int argc, char *argv[])
                         return 1;
                     }
                     amd->target = amd_target;
+                    amd->elf_mach = amd_elfm;
+                    snprintf(amd->chip_name, sizeof(amd->chip_name),
+                             "%s", amd_chip);
                     int arc = amdgpu_compile(bir_module, amd);
                     if (arc == BC_OK) {
                         amdgpu_regalloc(amd);
