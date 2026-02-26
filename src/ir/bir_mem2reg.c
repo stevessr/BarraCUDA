@@ -214,6 +214,8 @@ static void step1_find_promotable(m2r_t *S)
         bir_inst_t *I = &M->insts[i];
 
         if (I->op == BIR_LOAD) continue;
+        if (I->op == BIR_BR || I->op == BIR_BR_COND
+            || I->op == BIR_SWITCH) continue;
         if (I->op == BIR_STORE) {
             /* Alloca as stored VALUE (not dest) means address escapes */
             uint32_t vr = I->operands[0];
