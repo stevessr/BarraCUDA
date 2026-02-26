@@ -654,14 +654,8 @@ void amdgpu_emit_asm(const amd_module_t *amd, FILE *out)
     amd_module_t *A = (amd_module_t *)amd;
 
     A->asm_len = 0;
-    const char *tgt_str;
-    if (A->target == AMD_TARGET_GFX1200)
-        tgt_str = "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1200\"\n";
-    else if (A->target == AMD_TARGET_GFX1030)
-        tgt_str = "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1030\"\n";
-    else
-        tgt_str = "    .amdgcn_target \"amdgcn-amd-amdhsa--gfx1100\"\n";
-    asm_append(A, "%s", tgt_str);
+    asm_append(A, "    .amdgcn_target \"amdgcn-amd-amdhsa--%s\"\n",
+               A->chip_name);
     asm_append(A, "    .text\n\n");
 
     for (uint32_t fi = 0; fi < A->num_mfuncs; fi++) {
@@ -916,13 +910,8 @@ int amdgpu_emit_elf(amd_module_t *A, const char *path)
     mp_uint(mp_buf, &mp_pos, 2);
 
     mp_fixstr(mp_buf, &mp_pos, "amdhsa.target");
-    const char *mp_tgt;
-    if (A->target == AMD_TARGET_GFX1200)
-        mp_tgt = "amdgcn-amd-amdhsa--gfx1200";
-    else if (A->target == AMD_TARGET_GFX1030)
-        mp_tgt = "amdgcn-amd-amdhsa--gfx1030";
-    else
-        mp_tgt = "amdgcn-amd-amdhsa--gfx1100";
+    char mp_tgt[40];
+    snprintf(mp_tgt, sizeof(mp_tgt), "amdgcn-amd-amdhsa--%s", A->chip_name);
     mp_str(mp_buf, &mp_pos, mp_tgt);
 
     mp_fixstr(mp_buf, &mp_pos, "amdhsa.kernels");
@@ -1103,12 +1092,7 @@ int amdgpu_emit_elf(amd_module_t *A, const char *path)
     ehdr.e_entry = 0;
     ehdr.e_phoff = 0;
     ehdr.e_shoff = shdr_off;
-    if (A->target == AMD_TARGET_GFX1200)
-        ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1200;
-    else if (A->target == AMD_TARGET_GFX1030)
-        ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1030;
-    else
-        ehdr.e_flags = EF_AMDGPU_MACH_AMDGCN_GFX1100;
+    ehdr.e_flags = A->elf_mach;
     ehdr.e_ehsize = 64;
     ehdr.e_phentsize = 0;
     ehdr.e_phnum = 0;
