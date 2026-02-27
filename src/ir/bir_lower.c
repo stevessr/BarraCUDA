@@ -2390,18 +2390,14 @@ static void lower_func_body(lower_t *L, uint32_t func_def,
         if (pname_n) {
             char pname[128];
             get_text(L, pname_n, pname, sizeof(pname));
-            /* Struct params need an alloca so member access works */
-            if (param_types[i] < L->M->num_types
-                && L->M->types[param_types[i]].kind == BIR_TYPE_STRUCT) {
-                uint32_t pt = bir_type_ptr(L->M, param_types[i], BIR_AS_PRIVATE);
-                uint32_t al = emit(L, BIR_ALLOCA, pt, 0, 0);
-                uint32_t st = emit(L, BIR_STORE, bir_type_void(L->M), 2, 0);
-                set_op(L, st, 0, BIR_MAKE_VAL(inst));
-                set_op(L, st, 1, BIR_MAKE_VAL(al));
-                add_sym(L, pname, al, param_types[i], 1);
-            } else {
-                add_sym(L, pname, BIR_MAKE_VAL(inst), param_types[i], 0);
-            }
+            /* Promote all params to allocas so they're reassignable.
+               mem2reg cleans up the ones that are never written. */
+            uint32_t pt = bir_type_ptr(L->M, param_types[i], BIR_AS_PRIVATE);
+            uint32_t al = emit(L, BIR_ALLOCA, pt, 0, 0);
+            uint32_t st = emit(L, BIR_STORE, bir_type_void(L->M), 2, 0);
+            set_op(L, st, 0, BIR_MAKE_VAL(inst));
+            set_op(L, st, 1, BIR_MAKE_VAL(al));
+            add_sym(L, pname, al, param_types[i], 1);
         }
     }
 
