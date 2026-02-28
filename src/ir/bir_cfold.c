@@ -61,7 +61,7 @@ static int float_width(const bir_module_t *M, uint32_t tidx)
 static int64_t mask_to_width(int64_t val, int w)
 {
     if (w >= 64) return val;
-    return val & ((1LL << w) - 1);
+    return val & (int64_t)((1ULL << w) - 1);
 }
 
 /* Sign-extend an integer from w bits to int64_t. */
@@ -69,7 +69,7 @@ static int64_t sign_extend(int64_t val, int w)
 {
     if (w >= 64) return val;
     val = mask_to_width(val, w);
-    int64_t sign_bit = 1LL << (w - 1);
+    int64_t sign_bit = (int64_t)(1ULL << (w - 1));
     return (val ^ sign_bit) - sign_bit;
 }
 
@@ -178,6 +178,8 @@ static int try_fold(cf_t *S, uint32_t ii)
         case BIR_MUL:  r = a * b; break;
         case BIR_SDIV:
             if (b == 0) return 0;
+            if (sign_extend(b, sw) == -1 && sign_extend(a, sw) == INT64_MIN)
+                return 0;
             r = sign_extend(a, sw) / sign_extend(b, sw);
             break;
         case BIR_UDIV:
@@ -187,6 +189,8 @@ static int try_fold(cf_t *S, uint32_t ii)
             break;
         case BIR_SREM:
             if (b == 0) return 0;
+            if (sign_extend(b, sw) == -1 && sign_extend(a, sw) == INT64_MIN)
+                return 0;
             r = sign_extend(a, sw) % sign_extend(b, sw);
             break;
         case BIR_UREM:
@@ -197,7 +201,7 @@ static int try_fold(cf_t *S, uint32_t ii)
         case BIR_AND:  r = a & b; break;
         case BIR_OR:   r = a | b; break;
         case BIR_XOR:  r = a ^ b; break;
-        case BIR_SHL:  r = a << (b & (sw - 1)); break;
+        case BIR_SHL:  r = (int64_t)((uint64_t)a << (b & (sw - 1))); break;
         case BIR_LSHR:
             r = (int64_t)((uint64_t)mask_to_width(a, sw)
                 >> (b & (sw - 1)));
@@ -328,7 +332,10 @@ static int try_fold(cf_t *S, uint32_t ii)
         double r = c0->d.fval;
 
         switch (op) {
-        case BIR_FPTRUNC: r = (double)(float)r; break;
+        case BIR_FPTRUNC:
+            if (fw == 32) r = (double)(float)r;
+            else return 0; /* skip folding for f16 */
+            break;
         case BIR_FPEXT:   break; /* already double internally */
         default: return 0;
         }
