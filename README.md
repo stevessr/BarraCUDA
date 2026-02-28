@@ -12,9 +12,7 @@ This is what happens when you look at NVIDIA's walled garden and think "how hard
 
 ## What It Does
 
-Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 2/3/4 binaries or Tenstorrent Tensix Metalium C++. No LLVM. No HIP translation layer. No "convert your CUDA to something else first." Just a lexer, a parser, an IR, and hand-written backends that would make a compiler textbook weep.
-
-```
+Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 2/3/4 binaries or Tenstorrent Tensix Metalium C++. 
 ┌──────────────────────────────────────────────────────────────┐
 │                     BarraCUDA Pipeline                       │
 ├──────────────────────────────────────────────────────────────┤
@@ -45,7 +43,6 @@ Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compile
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Every single encoding has been validated against `llvm-objdump` with zero decode failures. I didn't use LLVM to compile, but I did use it to check my homework.
 
 ## Building
 
