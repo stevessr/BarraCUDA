@@ -13,7 +13,8 @@ LDFLAGS = -pie
 SOURCES = src/main.c \
           src/fe/preproc.c src/fe/lexer.c src/fe/parser.c src/fe/sema.c \
           src/ir/bir.c src/ir/bir_print.c src/ir/bir_lower.c src/ir/bir_mem2reg.c src/ir/bir_dce.c \
-          src/amdgpu/isel.c src/amdgpu/emit.c src/amdgpu/encode.c src/amdgpu/enc_tab.c
+          src/amdgpu/isel.c src/amdgpu/emit.c src/amdgpu/encode.c src/amdgpu/enc_tab.c \
+          src/tensix_isel.c src/tensix_emit.c src/tensix_coarsen.c src/tensix_datamov.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET  = barracuda
 
