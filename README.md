@@ -10,6 +10,8 @@ This is what happens when you look at NVIDIA's walled garden and think "how hard
 
 **UPDATE (AGAIN!):** Tenstorrent is now supported. Looking for testers, please fill out an issue if there is any problems. 
 
+**UPDATE:** CDNA 2 is now supported! Yes I'm getting to the point a changelog might be in order but thats a tomorrow problem. If anyone has hardware to validate please feel free to test this.
+
 ## What It Does
 
 Takes CUDA C source code, the same `.cu` files you'd feed to `nvcc`, and compiles them to AMD RDNA 2/3/4 binaries or Tenstorrent Tensix Metalium C++. 
