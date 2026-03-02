@@ -4,6 +4,7 @@
 #include "sema.h"
 #include "bir_lower.h"
 #include "bir_mem2reg.h"
+#include "bir_cfold.h"
 #include "bir_dce.h"
 #include "amdgpu.h"
 #include "tensix.h"
@@ -62,6 +63,7 @@ static void usage(const char *prog)
         "  --parse       Parse and dump AST\n"
         "  --ir          Lower to BIR and print IR\n"
         "  --no-mem2reg  Skip mem2reg optimization pass\n"
+        "  --no-cfold    Skip constant folding\n"
         "  --no-dce      Skip dead code elimination\n"
         "  --sema        Run semantic analysis and dump types\n"
         "  --pp          Preprocess only and print result\n"
@@ -91,6 +93,7 @@ int main(int argc, char *argv[])
     int mode_amdgpu_bin = 0;
     int mode_tensix = 0;
     int no_mem2reg = 0;
+    int no_cfold = 0;
     int no_dce = 0;
     int no_pp = 0;
     amd_target_t amd_target = AMD_TARGET_GFX1100;
@@ -176,6 +179,8 @@ int main(int argc, char *argv[])
                 defines[num_defines++] = argv[i] + 2;
         } else if (strcmp(argv[i], "--no-mem2reg") == 0)
             no_mem2reg = 1;
+        else if (strcmp(argv[i], "--no-cfold") == 0)
+            no_cfold = 1;
         else if (strcmp(argv[i], "--no-dce") == 0)
             no_dce = 1;
         else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -330,6 +335,8 @@ int main(int argc, char *argv[])
             if (lrc == BC_OK) {
                 if (!no_mem2reg)
                     bir_mem2reg(bir_module);
+                if (!no_cfold)
+                    bir_cfold(bir_module);
                 if (!no_dce)
                     bir_dce(bir_module);
 
